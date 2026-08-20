@@ -1,0 +1,6 @@
+@TestCDC.API_HostAddress = http://localhost:5076
+
+GET {{TestCDC.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

@@ -1,0 +1,2 @@
+docker/**/*.yml linguist-language=YAML  linguist-detectable=true
+**/Dockerfile.* linguist-language=Dockerfile  linguist-detectable=true
