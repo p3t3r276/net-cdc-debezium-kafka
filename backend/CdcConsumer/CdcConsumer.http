@@ -1,0 +1,6 @@
+@CdcConsumer_HostAddress = http://localhost:5276
+
+GET {{CdcConsumer_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

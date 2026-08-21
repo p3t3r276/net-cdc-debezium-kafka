@@ -1,3 +1,3 @@
 <Solution>
-  <Project Path="TestCDC.API/TestCDC.API.csproj" />
+  <Project Path="CdcConsumer/CdcConsumer.csproj" />
 </Solution>

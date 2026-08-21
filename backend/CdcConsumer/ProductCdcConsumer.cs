@@ -1,7 +1,8 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Confluent.Kafka;
 
-namespace TestCDC.API;
+namespace CdcConsumer;
 
 public record ProductChange(
     int Id,
@@ -10,12 +11,15 @@ public record ProductChange(
     [property: System.Text.Json.Serialization.JsonPropertyName("__deleted")]
     string Deleted);
 
-public class ProductCdcConsumer : BackgroundService
+public class ProductCdcConsumer(ILogger<ProductCdcConsumer> logger) : BackgroundService
 {
-    private readonly ILogger<ProductCdcConsumer> _logger;
+    private readonly JsonSerializerOptions options = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        NumberHandling = JsonNumberHandling.AllowReadingFromString
+    };
+    private readonly ILogger<ProductCdcConsumer> _logger = logger;
     private const string Topic = "appdb.public.products";
-
-    public ProductCdcConsumer(ILogger<ProductCdcConsumer> logger) => _logger = logger;
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -27,10 +31,11 @@ public class ProductCdcConsumer : BackgroundService
     {
         var config = new ConsumerConfig
         {
-            BootstrapServers = "localhost:29092",
+            BootstrapServers = "127.0.0.1:29092",
             GroupId = "dotnet-cdc-consumer",
             AutoOffsetReset = AutoOffsetReset.Earliest,
-            EnableAutoCommit = false // tự commit sau khi xử lý xong -> at-least-once
+            EnableAutoCommit = false, // tự commit sau khi xử lý xong -> at-least-once
+            BrokerAddressFamily = BrokerAddressFamily.V4
         };
 
         using var consumer = new ConsumerBuilder<string, string>(config).Build();
@@ -49,7 +54,18 @@ public class ProductCdcConsumer : BackgroundService
                     continue;
                 }
 
-                var change = JsonSerializer.Deserialize<ProductChange>(cr.Message.Value);
+                ProductChange? change;
+                try
+                {
+                    change = JsonSerializer.Deserialize<ProductChange>(cr.Message.Value, options);
+                }
+                catch (JsonException ex)
+                {
+                    _logger.LogError(ex, "Bad message at offset {Offset}: {Raw}",
+                        cr.Offset, cr.Message.Value);
+                    // commit offset / đẩy sang dead-letter tùy chiến lược
+                    continue;
+                }
                 if (change is null) { consumer.Commit(cr); continue; }
 
                 if (change.Deleted == "true")

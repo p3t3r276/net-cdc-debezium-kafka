@@ -1,6 +1,7 @@
 services:
   postgres:
     image: postgres:16
+    container_name: cdc-postgres
     command:
       - "postgres"
       - "-c"
@@ -15,11 +16,21 @@ services:
       POSTGRES_DB: appdb
     ports:
       - "5432:5432"
+    volumes:
+      # init.sql chạy 1 lần khi volume trống -> tự tạo bảng products
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d appdb"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   kafka:
     image: confluentinc/cp-kafka:7.7.1
+    container_name: cdc-kafka
     ports:
-      - "29092:29092"
+      - "29092:29092"   # listener cho app chạy trên host (.NET consumer)
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: "broker,controller"
@@ -34,12 +45,17 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+    volumes:
+      - kafkadata:/var/lib/kafka/data
 
   connect:
     image: quay.io/debezium/connect:3.4
+    container_name: cdc-connect
     depends_on:
-      - kafka
-      - postgres
+      kafka:
+        condition: service_started
+      postgres:
+        condition: service_healthy
     ports:
       - "8083:8083"
     environment:
@@ -48,9 +64,37 @@ services:
       CONFIG_STORAGE_TOPIC: "connect_configs"
       OFFSET_STORAGE_TOPIC: "connect_offsets"
       STATUS_STORAGE_TOPIC: "connect_statuses"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8083/connectors || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  # Đăng ký connector bằng PUT (idempotent) sau khi Connect đã healthy.
+  # Chạy 1 lần rồi exit -> deploy lại bao nhiêu lần cũng an toàn.
+  connector-init:
+    image: quay.io/debezium/connect:3.4
+    container_name: cdc-connector-init
+    depends_on:
+      connect:
+        condition: service_healthy
+    entrypoint: ["bash", "/register-connector.sh"]
+    environment:
+      CONNECT_URL: "http://connect:8083"
+    volumes:
+      - ./kafka-connect/register-connector.sh:/register-connector.sh:ro
+      - ./kafka-connect/connector-config.json:/connector-config.json:ro
+    restart: "no"
+
+  redis:
+    image: redis:7
+    container_name: cdc-redis
+    ports:
+      - "6379:6379"
 
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
+    container_name: cdc-kafka-ui
     depends_on:
       - kafka
     ports:
@@ -60,3 +104,7 @@ services:
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: "kafka:9092"
       KAFKA_CLUSTERS_0_KAFKACONNECT_0_NAME: "connect"
       KAFKA_CLUSTERS_0_KAFKACONNECT_0_ADDRESS: "http://connect:8083"
+
+volumes:
+  pgdata:
+  kafkadata:

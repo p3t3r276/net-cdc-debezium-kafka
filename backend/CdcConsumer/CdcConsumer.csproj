@@ -10,6 +10,7 @@
     <PackageReference Include="Confluent.Kafka" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
     <PackageReference Include="System.Text.Json" />
+    <PackageReference Include="StackExchange.Redis" />
   </ItemGroup>
 
 </Project>
