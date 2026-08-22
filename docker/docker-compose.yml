@@ -1,7 +1,9 @@
+name: cdc
+
 services:
   postgres:
     image: postgres:16
-    container_name: cdc-postgres
+    container_name: postgres
     command:
       - "postgres"
       - "-c"
@@ -28,7 +30,7 @@ services:
 
   kafka:
     image: confluentinc/cp-kafka:7.7.1
-    container_name: cdc-kafka
+    container_name: kafka
     ports:
       - "29092:29092"   # listener cho app chạy trên host (.NET consumer)
     environment:
@@ -50,7 +52,7 @@ services:
 
   connect:
     image: quay.io/debezium/connect:3.4
-    container_name: cdc-connect
+    container_name: connect
     depends_on:
       kafka:
         condition: service_started
@@ -74,7 +76,7 @@ services:
   # Chạy 1 lần rồi exit -> deploy lại bao nhiêu lần cũng an toàn.
   connector-init:
     image: quay.io/debezium/connect:3.4
-    container_name: cdc-connector-init
+    container_name: connector-init
     depends_on:
       connect:
         condition: service_healthy
@@ -88,13 +90,13 @@ services:
 
   redis:
     image: redis:7
-    container_name: cdc-redis
+    container_name: redis
     ports:
       - "6379:6379"
 
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
-    container_name: cdc-kafka-ui
+    container_name: kafka-ui
     depends_on:
       - kafka
     ports:

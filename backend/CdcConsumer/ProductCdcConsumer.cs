@@ -11,7 +11,7 @@ public record ProductChange(
     [property: System.Text.Json.Serialization.JsonPropertyName("__deleted")]
     string Deleted);
 
-public class ProductCdcConsumer(ILogger<ProductCdcConsumer> logger) : BackgroundService
+public class ProductCdcConsumer(ILogger<ProductCdcConsumer> logger, IProductCache cache) : BackgroundService
 {
     private readonly JsonSerializerOptions options = new()
     {
@@ -19,6 +19,7 @@ public class ProductCdcConsumer(ILogger<ProductCdcConsumer> logger) : Background
         NumberHandling = JsonNumberHandling.AllowReadingFromString
     };
     private readonly ILogger<ProductCdcConsumer> _logger = logger;
+    private readonly IProductCache _cache = cache;
     private const string Topic = "appdb.public.products";
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
@@ -47,9 +48,31 @@ public class ProductCdcConsumer(ILogger<ProductCdcConsumer> logger) : Background
             {
                 var cr = consumer.Consume(ct);
 
-                // Tombstone (value null) khi record bị xóa và tombstones bật -> bỏ qua
-                if (cr.Message.Value is null)
+                // Tombstone khi DELETE: value có thể là null, chuỗi rỗng, hoặc literal JSON "null".
+                // Key luôn có dạng {"id":N} -> xóa khỏi cache dựa trên id trong key.
+                if (string.IsNullOrWhiteSpace(cr.Message.Value) || cr.Message.Value == "null")
                 {
+                    var key = cr.Message.Key is null
+                        ? null
+                        : JsonSerializer.Deserialize<ProductKey>(cr.Message.Key, options);
+                    if (key is null)
+                    {
+                        consumer.Commit(cr);
+                        continue;
+                    }
+
+                    try
+                    {
+                        _logger.LogInformation("DELETE product {Id} (tombstone)", key.Id);
+                        _cache.RemoveAsync(key.Id, ct).AsTask().GetAwaiter().GetResult();
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        _logger.LogError(ex, "Cache delete failed for product {Id} at offset {Offset}",
+                            key.Id, cr.Offset);
+                        continue; // không commit -> retry ở poll kế tiếp
+                    }
+
                     consumer.Commit(cr);
                     continue;
                 }
@@ -68,13 +91,28 @@ public class ProductCdcConsumer(ILogger<ProductCdcConsumer> logger) : Background
                 }
                 if (change is null) { consumer.Commit(cr); continue; }
 
-                if (change.Deleted == "true")
-                    _logger.LogInformation("DELETE product {Id}", change.Id);
-                else
-                    _logger.LogInformation("UPSERT product {Id} - {Name} - {Price}",
-                        change.Id, change.Name, change.Price);
-
-                // TODO: đẩy vào read-model / handler của bạn ở đây
+                try
+                {
+                    if (change.Deleted == "true")
+                    {
+                        _logger.LogInformation("DELETE product {Id}", change.Id);
+                        _cache.RemoveAsync(change.Id, ct).AsTask().GetAwaiter().GetResult();
+                    }
+                    else
+                    {
+                        _logger.LogInformation("UPSERT product {Id} - {Name} - {Price}",
+                            change.Id, change.Name, change.Price);
+                        var view = new ProductView(change.Id, change.Name, change.Price);
+                        _cache.UpsertAsync(view, ct).AsTask().GetAwaiter().GetResult();
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // Không commit -> message sẽ được xử lý lại ở poll kế tiếp
+                    _logger.LogError(ex, "Cache write failed for product {Id} at offset {Offset}",
+                        change.Id, cr.Offset);
+                    continue;
+                }
 
                 consumer.Commit(cr); // commit sau khi xử lý thành công
             }
