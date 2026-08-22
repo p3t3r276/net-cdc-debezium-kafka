@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS products (
 -- FULL: ghi đủ ảnh "before" của mọi cột vào WAL, để event UPDATE/DELETE
 -- có đầy đủ giá trị (không bị null ở cột non-key). Đánh đổi bằng WAL nặng hơn.
 -- Bảng lớn nên cân nhắc giữ mặc định (chỉ ghi cột thuộc primary key).
-ALTER TABLE products REPLICA IDENTITY FULL;
+ALTER TABLE products REPLICA IDENTITY DEFAULT;
 
 -- Vài dòng seed để thấy snapshot ban đầu chảy vào cache khi consumer chạy.
 INSERT INTO products (name, price) VALUES

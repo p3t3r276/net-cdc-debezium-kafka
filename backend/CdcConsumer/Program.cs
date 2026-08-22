@@ -20,8 +20,6 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-// app.UseHttpsRedirection();
-
 app.MapGet("/products", (IProductCache cache, CancellationToken ct) => cache.GetAllAsync(ct));
 
 app.Run();
