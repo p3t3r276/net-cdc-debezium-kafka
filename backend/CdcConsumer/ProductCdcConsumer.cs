@@ -64,7 +64,7 @@ public class ProductCdcConsumer(ILogger<ProductCdcConsumer> logger, IProductCach
                     try
                     {
                         _logger.LogInformation("DELETE product {Id} (tombstone)", key.Id);
-                        _cache.RemoveAsync(key.Id, ct).AsTask().GetAwaiter().GetResult();
+                        _cache.RemoveAsync(key.Id, ct).GetAwaiter().GetResult();
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
@@ -96,14 +96,14 @@ public class ProductCdcConsumer(ILogger<ProductCdcConsumer> logger, IProductCach
                     if (change.Deleted == "true")
                     {
                         _logger.LogInformation("DELETE product {Id}", change.Id);
-                        _cache.RemoveAsync(change.Id, ct).AsTask().GetAwaiter().GetResult();
+                        _cache.RemoveAsync(change.Id, ct).GetAwaiter().GetResult();
                     }
                     else
                     {
                         _logger.LogInformation("UPSERT product {Id} - {Name} - {Price}",
                             change.Id, change.Name, change.Price);
                         var view = new ProductView(change.Id, change.Name, change.Price);
-                        _cache.UpsertAsync(view, ct).AsTask().GetAwaiter().GetResult();
+                        _cache.UpsertAsync(view, ct).GetAwaiter().GetResult();
                     }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)

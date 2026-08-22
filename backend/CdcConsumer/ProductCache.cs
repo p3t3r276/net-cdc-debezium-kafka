@@ -1,4 +1,5 @@
-using Microsoft.Extensions.Caching.Hybrid;
+using System.Text.Json;
+using StackExchange.Redis;
 
 namespace CdcConsumer;
 
@@ -10,30 +11,27 @@ public record ProductKey(int Id);
 
 public interface IProductCache
 {
-    ValueTask UpsertAsync(ProductView product, CancellationToken ct = default);
-    ValueTask RemoveAsync(int id, CancellationToken ct = default);
+    Task UpsertAsync(ProductView product, CancellationToken ct = default);
+    Task RemoveAsync(int id, CancellationToken ct = default);
 }
 
-// Dedicated cache service wrapping HybridCache (L1 in-memory + L2 Redis).
-// All products share the "products" tag so the collection can be invalidated
-// together via cache.RemoveByTagAsync("products").
-public class ProductCache(HybridCache cache) : IProductCache
+// Redis-backed read model kept in sync by CDC. Values are plain JSON strings so
+// other services/languages can read them directly. No TTL: entries persist until
+// a CDC change event updates or removes them.
+// Note: StackExchange.Redis operations don't take a CancellationToken (they rely
+// on connection-level timeouts), so the ct params are unused here.
+public class ProductCache(IConnectionMultiplexer mux) : IProductCache
 {
-    private static readonly string[] Tags = ["products"];
+    private readonly IDatabase _db = mux.GetDatabase();
 
-    // Read-model kept in sync by CDC -> entries persist until a change event
-    // updates/removes them (don't let the default ~5 min expiration drop them).
-    private static readonly HybridCacheEntryOptions EntryOptions = new()
+    private static RedisKey Key(int id) => $"product:{id}";
+
+    public Task UpsertAsync(ProductView product, CancellationToken ct = default)
     {
-        Expiration = TimeSpan.FromDays(365),
-        LocalCacheExpiration = TimeSpan.FromMinutes(5)
-    };
+        var json = JsonSerializer.Serialize(product);
+        return _db.StringSetAsync(Key(product.Id), json);
+    }
 
-    private static string Key(int id) => $"product:{id}";
-
-    public ValueTask UpsertAsync(ProductView product, CancellationToken ct = default)
-        => cache.SetAsync(Key(product.Id), product, EntryOptions, Tags, ct);
-
-    public ValueTask RemoveAsync(int id, CancellationToken ct = default)
-        => cache.RemoveAsync(Key(id), ct);
+    public Task RemoveAsync(int id, CancellationToken ct = default)
+        => _db.KeyDeleteAsync(Key(id));
 }
