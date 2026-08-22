@@ -22,4 +22,6 @@ if (app.Environment.IsDevelopment())
 
 // app.UseHttpsRedirection();
 
+app.MapGet("/products", (IProductCache cache, CancellationToken ct) => cache.GetAllAsync(ct));
+
 app.Run();
