@@ -106,6 +106,15 @@ docker exec -it cdc-redis redis-cli KEYS "product:*"
 docker exec -it cdc-redis redis-cli GET "product:1"
 ```
 
+### Change kafka connect config
+
+Update `docker/kafka-connect/connector-config.json`
+then run
+```bash
+docker compose up -d --force-recreate kafka connect
+cd src/CdcConsumer && dotnet run
+```
+
 ## Key design notes
 
 - **Register the connector once per cluster.** The config lives in Kafka's `connect_configs` topic, not in a file. Restarting Connect does not require re-registration. Re-register only when Kafka data is wiped, or when deploying to a new cluster. Use `PUT` (upsert) instead of `POST` so the pipeline is idempotent and won't break on `409 Conflict`.
@@ -115,7 +124,7 @@ docker exec -it cdc-redis redis-cli GET "product:1"
 
 ## Teardown
 ```bash
-docker compose down -v   # -v also removes volumes (Postgres + Kafka) -> clean reset
+docker compose down -v --rmi local  # -v also removes volumes (Postgres + Kafka) -> clean reset
 ```
 Note: `-v` wipes `connect_configs` → next time `connector-init` must re-register
 (it does so automatically on `up`).
