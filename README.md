@@ -1,6 +1,4 @@
-# .NET CDC with Debezium, Postgresql and Kafka
-
-# Debezium CDC: PostgreSQL → Kafka → .NET → Redis (read-model)
+# .NET CDC with Debezium, Postgresql, Kafka sync to Redis
 
 A runnable scaffold demonstrating Change Data Capture: every change on the
 `products` table in Postgres is captured by Debezium via the WAL, pushed to
